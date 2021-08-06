@@ -809,7 +809,8 @@ std::vector<KmerNodePtr> LocalPRG::kmernode_path_from_localnode_path(
 }
 
 std::vector<LocalNodePtr> LocalPRG::localnode_path_from_kmernode_path(
-    const std::vector<KmerNodePtr>& kmernode_path, const uint32_t w) const
+    const std::vector<KmerNodePtr>& kmernode_path, const uint32_t w,
+    bool extend_to_begin, bool extend_to_end) const
 {
     BOOST_LOG_TRIVIAL(debug) << "Convert kmernode path to localnode path";
     std::vector<LocalNodePtr> localnode_path, kmernode, walk_path;
@@ -840,85 +841,90 @@ std::vector<LocalNodePtr> LocalPRG::localnode_path_from_kmernode_path(
     }
 
     // extend to beginning of graph if possible
-    bool overlap;
-    if (localnode_path[0]->id != 0) {
-        walk_paths = prg.walk(0, 0, w);
-        for (uint32_t i = 0; i != walk_paths.size(); ++i) {
-            walk_path = nodes_along_path(*(walk_paths[i]));
-            // does it overlap
-            uint32_t n = 0, m = 0;
-            overlap = false;
-            for (uint32_t j = 0; j != walk_path.size(); ++j) {
-                if (walk_path[j] == localnode_path[n]) {
-                    if (!overlap) {
-                        m = j;
-                    }
-                    overlap = true;
-                    if (n + 1 >= localnode_path.size()) {
+    if (extend_to_begin) {
+        bool overlap;
+        if (localnode_path[0]->id != 0) {
+            walk_paths = prg.walk(0, 0, w);
+            for (uint32_t i = 0; i != walk_paths.size(); ++i) {
+                walk_path = nodes_along_path(*(walk_paths[i]));
+                // does it overlap
+                uint32_t n = 0, m = 0;
+                overlap = false;
+                for (uint32_t j = 0; j != walk_path.size(); ++j) {
+                    if (walk_path[j] == localnode_path[n]) {
+                        if (!overlap) {
+                            m = j;
+                        }
+                        overlap = true;
+                        if (n + 1 >= localnode_path.size()) {
+                            break;
+                        } else {
+                            ++n;
+                        }
+                    } else if (overlap) {
+                        overlap = false;
                         break;
-                    } else {
-                        ++n;
                     }
-                } else if (overlap) {
-                    overlap = false;
+                }
+                if (overlap) {
+                    localnode_path.insert(
+                        localnode_path.begin(), walk_path.begin(), walk_path.begin() + m);
                     break;
                 }
             }
-            if (overlap) {
-                localnode_path.insert(
-                    localnode_path.begin(), walk_path.begin(), walk_path.begin() + m);
-                break;
-            }
-        }
-        if (localnode_path[0]->id != 0) {
-            // add the first path to start
-            LocalNodePtr next = nullptr;
-            while (localnode_path[0]->id != 0 and next != localnode_path[0]) {
-                next = prg.get_previous_node(localnode_path[0]);
-                if (next != nullptr) {
-                    localnode_path.insert(localnode_path.begin(), next);
+            if (localnode_path[0]->id != 0) {
+                // add the first path to start
+                LocalNodePtr next = nullptr;
+                while (localnode_path[0]->id != 0 and next != localnode_path[0]) {
+                    next = prg.get_previous_node(localnode_path[0]);
+                    if (next != nullptr) {
+                        localnode_path.insert(localnode_path.begin(), next);
+                    }
                 }
             }
         }
     }
 
-    // extend to end of graph if possible
-    if (localnode_path.back()->id != prg.nodes.size() - 1) {
-        walk_paths = prg.walk_back(prg.nodes.size() - 1, seq.length(), w);
-        for (uint32_t i = 0; i != walk_paths.size(); ++i) {
-            walk_path = nodes_along_path(*(walk_paths[i]));
+    if (extend_to_end) {
+        bool overlap;
+        // extend to end of graph if possible
+        if (localnode_path.back()->id != prg.nodes.size() - 1) {
+            walk_paths = prg.walk_back(prg.nodes.size() - 1, seq.length(), w);
+            for (uint32_t i = 0; i != walk_paths.size(); ++i) {
+                walk_path = nodes_along_path(*(walk_paths[i]));
 
-            // does it overlap
-            uint32_t n = localnode_path.size();
-            uint32_t m = 0;
-            overlap = false;
-            for (uint32_t j = walk_path.size(); j != 0; --j) {
-                if (walk_path[j - 1] == localnode_path[n - 1]) {
-                    if (!overlap) {
-                        m = j;
-                    }
-                    overlap = true;
-                    if (n - 1 == 0) {
+                // does it overlap
+                uint32_t n = localnode_path.size();
+                uint32_t m = 0;
+                overlap = false;
+                for (uint32_t j = walk_path.size(); j != 0; --j) {
+                    if (walk_path[j - 1] == localnode_path[n - 1]) {
+                        if (!overlap) {
+                            m = j;
+                        }
+                        overlap = true;
+                        if (n - 1 == 0) {
+                            break;
+                        } else {
+                            --n;
+                        }
+                    } else if (overlap) {
+                        overlap = false;
                         break;
-                    } else {
-                        --n;
                     }
-                } else if (overlap) {
-                    overlap = false;
+                }
+                if (overlap) {
+                    localnode_path.insert(
+                        localnode_path.end(), walk_path.begin() + m, walk_path.end());
                     break;
                 }
             }
-            if (overlap) {
-                localnode_path.insert(
-                    localnode_path.end(), walk_path.begin() + m, walk_path.end());
-                break;
-            }
-        }
-        if (localnode_path.back()->id != prg.nodes.size() - 1) {
-            // add the first path to end
-            while (localnode_path.back()->id != prg.nodes.size() - 1
+            if (localnode_path.back()->id != prg.nodes.size() - 1) {
+                // add the first path to end
+                while (localnode_path.back()->id != prg.nodes.size() - 1
                 and !localnode_path.back()->outNodes.empty()) {
-                localnode_path.push_back(localnode_path.back()->outNodes[0]);
+                    localnode_path.push_back(localnode_path.back()->outNodes[0]);
+                }
             }
         }
     }
@@ -1655,7 +1661,8 @@ void LocalPRG::add_sample_covgs_to_vcf(VCF& vcf, const KmerGraphWithCoverage& kg
 void LocalPRG::add_consensus_path_to_fastaq(Fastaq& output_fq, PanNodePtr pnode,
     std::vector<KmerNodePtr>& kmp, std::vector<LocalNodePtr>& lmp, const uint32_t w,
     const bool bin, const uint32_t global_covg,
-    const uint32_t& max_num_kmers_to_average, const uint32_t& sample_id) const
+    const uint32_t& max_num_kmers_to_average, const uint32_t& sample_id,
+    const fs::path &sample_outdir) const
 {
     if (pnode->reads.empty()) {
         BOOST_LOG_TRIVIAL(warning) << "Node " << pnode->get_name() << " has no reads";
@@ -1667,8 +1674,8 @@ void LocalPRG::add_consensus_path_to_fastaq(Fastaq& output_fq, PanNodePtr pnode,
     std::string prob_model = "nbin";
     if (bin)
         prob_model = "bin";
-    float ppath = pnode->kmer_prg_with_coverage.find_max_path(
-        kmp, prob_model, max_num_kmers_to_average, sample_id, pnode.get());
+    float ppath = pnode->kmer_prg_with_coverage.find_max_path_with_base_level_mapping(
+        kmp, prob_model, max_num_kmers_to_average, sample_id, *pnode, sample_outdir);
 
     lmp.reserve(100);
     lmp = localnode_path_from_kmernode_path(kmp, w);

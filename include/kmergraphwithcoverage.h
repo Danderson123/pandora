@@ -42,6 +42,10 @@ private:
     void increment_covg(uint32_t node_id, pandora::Strand strand, uint32_t sample_id);
     void set_covg(
         uint32_t node_id, uint16_t value, pandora::Strand strand, uint32_t sample_id);
+    std::vector<KmerNodePtr> extract_path(
+        const KmerNodePtr& considered_outnode,
+        const std::vector<uint32_t> &prev_node_along_maxpath,
+        const uint32_t terminus_node_id);
 
 public:
     KmerGraph* kmer_prg; // the underlying KmerGraph - TODO: it is dangerous to leave
@@ -144,9 +148,16 @@ public:
 
     bool coverage_is_zeroes(const uint32_t&);
 
-    float find_max_path(std::vector<KmerNodePtr>& maxpath,
+    float find_max_path_with_base_level_mapping(std::vector<KmerNodePtr>& maxpath,
         const std::string& prob_model, const uint32_t& max_num_kmers_to_average,
-        const uint32_t& sample_id, const pangenome::Node *pangenome_node = NULL);
+        const uint32_t& sample_id, const pangenome::Node &pangenome_node,
+        const fs::path &sample_outdir);
+
+    float find_max_path(std::vector<KmerNodePtr>& maxpath,
+                                               const std::string& prob_model,
+                                               const uint32_t& max_num_kmers_to_average,
+                                               const uint32_t& sample_id);
+
 
     std::vector<std::vector<KmerNodePtr>> find_max_paths(
         uint32_t, const uint32_t& sample_id);

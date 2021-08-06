@@ -178,6 +178,22 @@ void setup_compare_subcommand(CLI::App& app)
     compare_subcmd->callback([opt]() { pandora_compare(*opt); });
 }
 
+void create_reads_file_for_sample_and_locus(
+    const fs::path &sample_outdir,
+    const std::string &sample_name,
+    const std::string &locus_name
+    ) {
+    fs::path sam_file = sample_outdir / (sample_name + ".filtered.sam");
+    fs::path reads_filepath = sample_outdir / (locus_name + "_reads.fa");
+
+    std::stringstream command_ss;
+    command_ss << "awk 'BEGIN{FS=\"\t\";OFS=\"\"} {if($2==0 && $3==\"" << locus_name
+               << "\"){print \">\",$1,\"\\n\",$10}}' " << sam_file
+               << " > " << reads_filepath;
+    std::cout << "Running " << command_ss.str() << std::endl;
+    system(command_ss.str().c_str());
+}
+
 int pandora_compare(CompareOptions& opt)
 {
     auto log_level = boost::log::trivial::info;
@@ -283,11 +299,15 @@ int pandora_compare(CompareOptions& opt)
         Fastaq consensus_fq(true, true);
         for (auto c = pangraph_sample->nodes.begin();
              c != pangraph_sample->nodes.end();) {
+            create_reads_file_for_sample_and_locus(
+                sample_outdir, sample_name, c->second->get_name()
+                );
+
             const LocalPRG& local_prg = *prgs[c->second->prg_id];
             vector<KmerNodePtr> kmp;
             vector<LocalNodePtr> lmp;
             local_prg.add_consensus_path_to_fastaq(consensus_fq, c->second, kmp, lmp,
-                opt.window_size, opt.binomial, covg, opt.max_num_kmers_to_avg, 0);
+                opt.window_size, opt.binomial, covg, opt.max_num_kmers_to_avg, 0, sample_outdir);
 
             if (kmp.empty()) {
                 c = pangraph_sample->remove_node(c->second);

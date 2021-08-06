@@ -316,6 +316,7 @@ void pandora_discover_core(const SampleData& sample,
     const std::shared_ptr<Index>& index,
     const std::vector<std::shared_ptr<LocalPRG>>& prgs, const DiscoverOptions& opt)
 {
+    /*
     const auto& sample_name = sample.first;
     const auto& sample_fpath = sample.second;
 
@@ -477,6 +478,7 @@ void pandora_discover_core(const SampleData& sample,
 
     BOOST_LOG_TRIVIAL(info) << "[Sample " << sample_name << "] "
                             << "Done discovering!";
+                            */
 }
 
 int pandora_discover(DiscoverOptions& opt)

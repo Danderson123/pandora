@@ -75,7 +75,8 @@ public:
         const std::vector<LocalNodePtr>&) const;
 
     std::vector<LocalNodePtr> localnode_path_from_kmernode_path(
-        const std::vector<KmerNodePtr>&, const uint32_t w = 0) const;
+        const std::vector<KmerNodePtr>&, const uint32_t w = 0,
+        bool extend_to_begin=true, bool extend_to_end=true) const;
 
     void write_covgs_to_file(
         const boost::filesystem::path&, const std::vector<uint32_t>&) const;
@@ -127,7 +128,8 @@ public:
 
     void add_consensus_path_to_fastaq(Fastaq&, PanNodePtr, std::vector<KmerNodePtr>&,
         std::vector<LocalNodePtr>&, const uint32_t, const bool, const uint32_t,
-        const uint32_t& max_num_kmers_to_average, const uint32_t& sample_id) const;
+        const uint32_t& max_num_kmers_to_average, const uint32_t& sample_id,
+        const fs::path &sample_outdir) const;
     std::vector<LocalNodePtr> get_valid_vcf_reference(const std::string&) const;
 
     void add_variants_to_vcf(VCF&, PanNodePtr, const std::string&,
