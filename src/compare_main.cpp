@@ -178,7 +178,7 @@ void setup_compare_subcommand(CLI::App& app)
     compare_subcmd->callback([opt]() { pandora_compare(*opt); });
 }
 
-void create_reads_file_for_sample_and_locus(
+fs::path create_reads_file_for_sample_and_locus(
     const fs::path &sample_outdir,
     const std::string &sample_name,
     const std::string &locus_name
@@ -192,6 +192,8 @@ void create_reads_file_for_sample_and_locus(
                << " > " << reads_filepath;
     std::cout << "Running " << command_ss.str() << std::endl;
     system(command_ss.str().c_str());
+
+    return reads_filepath;
 }
 
 int pandora_compare(CompareOptions& opt)
@@ -299,7 +301,7 @@ int pandora_compare(CompareOptions& opt)
         Fastaq consensus_fq(true, true);
         for (auto c = pangraph_sample->nodes.begin();
              c != pangraph_sample->nodes.end();) {
-            create_reads_file_for_sample_and_locus(
+            fs::path reads_filepath = create_reads_file_for_sample_and_locus(
                 sample_outdir, sample_name, c->second->get_name()
                 );
 
@@ -319,6 +321,8 @@ int pandora_compare(CompareOptions& opt)
                 c->second->prg_id, sample_name, kmp);
 
             ++c;
+
+            remove(reads_filepath);
         }
 
         pangraph->copy_coverages_to_kmergraphs(*pangraph_sample, sample_id);
