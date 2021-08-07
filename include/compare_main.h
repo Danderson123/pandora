@@ -24,6 +24,7 @@
 #include "OptionsAggregator.h"
 #include "CLI11.hpp"
 #include "fatal_error.h"
+#include "pangenome/ns.cpp"
 
 using std::set;
 using std::vector;

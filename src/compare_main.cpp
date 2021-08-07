@@ -299,30 +299,40 @@ int pandora_compare(CompareOptions& opt)
         BOOST_LOG_TRIVIAL(info) << "Find max likelihood PRG paths";
         auto sample_pangraph_size = pangraph_sample->nodes.size();
         Fastaq consensus_fq(true, true);
-        for (auto c = pangraph_sample->nodes.begin();
-             c != pangraph_sample->nodes.end();) {
+
+        std::vector<pangenome::NodePtr> pangraph_nodes;
+        for (auto c = pangraph_sample->nodes.begin(); c != pangraph_sample->nodes.end(); ++c) {
+            pangraph_nodes.push_back(c->second);
+        }
+
+#pragma omp parallel for num_threads(opt.threads) schedule(dynamic, 1)
+        for (uint32_t pangraph_node_index = 0; pangraph_node_index < pangraph_nodes.size(); ++pangraph_node_index) {
+            auto pangraph_node = pangraph_nodes[pangraph_node_index];
             fs::path reads_filepath = create_reads_file_for_sample_and_locus(
-                sample_outdir, sample_name, c->second->get_name()
+                sample_outdir, sample_name, pangraph_node->get_name()
                 );
 
-            const LocalPRG& local_prg = *prgs[c->second->prg_id];
+            const LocalPRG& local_prg = *prgs[pangraph_node->prg_id];
             vector<KmerNodePtr> kmp;
             vector<LocalNodePtr> lmp;
-            local_prg.add_consensus_path_to_fastaq(consensus_fq, c->second, kmp, lmp,
+            local_prg.add_consensus_path_to_fastaq(consensus_fq, pangraph_node, kmp, lmp,
                 opt.window_size, opt.binomial, covg, opt.max_num_kmers_to_avg, 0, sample_outdir);
+            remove(reads_filepath);
 
             if (kmp.empty()) {
-                c = pangraph_sample->remove_node(c->second);
+#pragma omp critical(pangraph_sample)
+                {
+                    pangraph_sample->remove_node(pangraph_node);
+                }
                 continue;
             }
 
-            pangraph->add_node(prgs[c->second->prg_id]);
-            pangraph->add_hits_between_PRG_and_sample(
-                c->second->prg_id, sample_name, kmp);
-
-            ++c;
-
-            remove(reads_filepath);
+#pragma omp critical(pangraph)
+            {
+                pangraph->add_node(prgs[pangraph_node->prg_id]);
+                pangraph->add_hits_between_PRG_and_sample(
+                    pangraph_node->prg_id, sample_name, kmp);
+            }
         }
 
         pangraph->copy_coverages_to_kmergraphs(*pangraph_sample, sample_id);
