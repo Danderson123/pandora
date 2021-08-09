@@ -1662,7 +1662,7 @@ void LocalPRG::add_consensus_path_to_fastaq(Fastaq& output_fq, PanNodePtr pnode,
     std::vector<KmerNodePtr>& kmp, std::vector<LocalNodePtr>& lmp, const uint32_t w,
     const bool bin, const uint32_t global_covg,
     const uint32_t& max_num_kmers_to_average, const uint32_t& sample_id,
-    const fs::path &sample_outdir) const
+    const fs::path &sample_outdir, const std::string &read_locus_filepath) const
 {
     if (pnode->reads.empty()) {
         BOOST_LOG_TRIVIAL(warning) << "Node " << pnode->get_name() << " has no reads";
@@ -1675,7 +1675,8 @@ void LocalPRG::add_consensus_path_to_fastaq(Fastaq& output_fq, PanNodePtr pnode,
     if (bin)
         prob_model = "bin";
     float ppath = pnode->kmer_prg_with_coverage.find_max_path_with_base_level_mapping(
-        kmp, prob_model, max_num_kmers_to_average, sample_id, *pnode, sample_outdir);
+        kmp, prob_model, max_num_kmers_to_average, sample_id, *pnode, sample_outdir,
+        read_locus_filepath);
 
     lmp.reserve(100);
     lmp = localnode_path_from_kmernode_path(kmp, w);

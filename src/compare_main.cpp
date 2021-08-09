@@ -1,4 +1,5 @@
 #include "compare_main.h"
+#include <boost/algorithm/string.hpp>
 
 void setup_compare_subcommand(CLI::App& app)
 {
@@ -178,22 +179,46 @@ void setup_compare_subcommand(CLI::App& app)
     compare_subcmd->callback([opt]() { pandora_compare(*opt); });
 }
 
-fs::path create_reads_file_for_sample_and_locus(
+std::map<std::string, std::string> get_locus_to_reads(
     const fs::path &sample_outdir,
-    const std::string &sample_name,
-    const std::string &locus_name
+    const std::string &sample_name
     ) {
-    fs::path sam_file = sample_outdir / (sample_name + ".filtered.sam");
-    fs::path reads_filepath = sample_outdir / (locus_name + "_reads.fa");
+    // get all reads from a locus and put in a vector (locus_to_vector_of_reads)
+    std::map<std::string, std::vector<std::string>> locus_to_vector_of_reads;
+    std::ifstream filtered_samfile;
+    open_file_for_reading((sample_outdir / (sample_name + ".filtered.sam")).string(),
+        filtered_samfile);
+    std::string line;
+    while (std::getline(filtered_samfile, line))
+    {
+        std::vector<std::string> words;
+        boost::split(words, line, boost::is_any_of("\t"));
+        const bool is_mapped = words.size() >= 3 && words[1] == "0";
+        if (is_mapped) {
+            const std::string &read_name = words[0];
+            const std::string &locus = words[2];
+            const std::string &read_seq = words[9];
+            std::stringstream ss;
+            ss << ">" << read_name << "\n" << read_seq << "\n";
+            locus_to_vector_of_reads[locus].push_back(ss.str());
+        }
+    }
 
-    std::stringstream command_ss;
-    command_ss << "awk 'BEGIN{FS=\"\t\";OFS=\"\"} {if($2==0 && $3==\"" << locus_name
-               << "\"){print \">\",$1,\"\\n\",$10}}' " << sam_file
-               << " > " << reads_filepath;
-    std::cout << "Running " << command_ss.str() << std::endl;
-    system(command_ss.str().c_str());
+    // transforms the vector to a single string
+    std::map<std::string, std::string> locus_to_reads;
+    for(const auto &locus_to_vector_of_reads_it : locus_to_vector_of_reads) {
+        const std::string &locus = locus_to_vector_of_reads_it.first;
+        const std::vector<std::string> &reads = locus_to_vector_of_reads_it.second;
 
-    return reads_filepath;
+        std::string reads_as_a_single_string;
+        for (const std::string &read : reads) {
+            reads_as_a_single_string += read;
+        }
+
+        locus_to_reads[locus] = reads_as_a_single_string;
+    }
+
+    return locus_to_reads;
 }
 
 int pandora_compare(CompareOptions& opt)
@@ -305,19 +330,33 @@ int pandora_compare(CompareOptions& opt)
             pangraph_nodes.push_back(c->second);
         }
 
+        std::map<std::string, std::string> locus_to_reads = get_locus_to_reads(
+            sample_outdir, sample_name);
+
 #pragma omp parallel for num_threads(opt.threads) schedule(dynamic, 1)
         for (uint32_t pangraph_node_index = 0; pangraph_node_index < pangraph_nodes.size(); ++pangraph_node_index) {
             auto pangraph_node = pangraph_nodes[pangraph_node_index];
-            fs::path reads_filepath = create_reads_file_for_sample_and_locus(
-                sample_outdir, sample_name, pangraph_node->get_name()
-                );
+            const std::string& locus = pangraph_node->name;
+
+            const bool no_reads_mapped = locus_to_reads[locus].empty();
+            if (no_reads_mapped) {
+#pragma omp critical(pangraph_sample)
+                {
+                    pangraph_sample->remove_node(pangraph_node);
+                }
+                continue;
+            }
+
+            // builds a mem_fd with the locus reads
+            std::pair<int, std::string> read_locus_fd_and_filepath = build_memfd(locus_to_reads[locus]);
 
             const LocalPRG& local_prg = *prgs[pangraph_node->prg_id];
             vector<KmerNodePtr> kmp;
             vector<LocalNodePtr> lmp;
             local_prg.add_consensus_path_to_fastaq(consensus_fq, pangraph_node, kmp, lmp,
-                opt.window_size, opt.binomial, covg, opt.max_num_kmers_to_avg, 0, sample_outdir);
-            remove(reads_filepath);
+                opt.window_size, opt.binomial, covg, opt.max_num_kmers_to_avg, 0,
+                sample_outdir, read_locus_fd_and_filepath.second);
+            close(read_locus_fd_and_filepath.first);
 
             if (kmp.empty()) {
 #pragma omp critical(pangraph_sample)

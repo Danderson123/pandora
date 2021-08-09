@@ -253,7 +253,8 @@ std::vector<KmerNodePtr> KmerGraphWithCoverage::extract_path(
 
 float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<KmerNodePtr>& maxpath,
     const std::string& prob_model, const uint32_t& max_num_kmers_to_average,
-    const uint32_t& sample_id, const pangenome::Node &pangenome_node, const fs::path &sample_outdir)
+    const uint32_t& sample_id, const pangenome::Node &pangenome_node, const fs::path &sample_outdir,
+    const std::string &read_locus_filepath)
 {
     // TODO: FIX THIS INNEFICIENCY I INTRODUCED
     const std::vector<KmerNodePtr> sorted_nodes(
@@ -292,12 +293,8 @@ float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<K
         } else {
             // find the best outnode
 
-            // 1. Build a fasta file with all outnodes ML paths
-            std::ofstream outnodes_ml_paths_fh;
-            const std::string outnodes_ml_paths_filename = (sample_outdir
-                / (pangenome_node.get_name() + "_node_" + int_to_string(j) + ".fa"))
-                                                               .string();
-            open_file_for_writing(outnodes_ml_paths_filename, outnodes_ml_paths_fh);
+            // 1. Build a memfd fasta file with all outnodes ML paths
+            std::stringstream outnodes_ml_paths_ss;
             for (uint32_t i = 0; i != current_node->out_nodes.size(); ++i) {
                 const KmerNodePtr& considered_outnode
                     = current_node->out_nodes[i].lock();
@@ -308,60 +305,63 @@ float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<K
                         ML_kmer_path_of_outnode, 0, false, false);
                 const std::string ML_sequence_of_outnode
                     = pangenome_node.prg->string_along_path(ML_local_path_of_outnode);
-                outnodes_ml_paths_fh << ">" << considered_outnode->id
-                                     << std::endl;
-                outnodes_ml_paths_fh << ML_sequence_of_outnode << std::endl;
+                if (ML_sequence_of_outnode.size() > 0) {
+                    outnodes_ml_paths_ss << ">" << considered_outnode->id
+                    << std::endl;
+                    outnodes_ml_paths_ss << ML_sequence_of_outnode << std::endl;
+                }
             }
-            outnodes_ml_paths_fh.close();
+            std::pair<int, std::string> outnodes_ml_paths_fd_and_filepath = build_memfd(outnodes_ml_paths_ss.str());
 
-            // 2. Map the loci reads to the ML sequences
-            const std::string locus_reads_fasta_filepath = (sample_outdir
-                / (pangenome_node.get_name() + "_reads.fa")).string();
-            const std::string sam_file = outnodes_ml_paths_filename + ".sam";
+            // 2. Map the loci reads to the ML sequences, and get the neighbour that has most reads mapping to it
             std::stringstream minimap2_ss;
-            minimap2_ss << "minimap2 -t 1 -N 0 -n 1 -m " << kmer_prg->k << " -a "
-                        << "-o " << sam_file << " "
-                        << outnodes_ml_paths_filename << " "
-                        << locus_reads_fasta_filepath << " 2>/dev/null";
+            minimap2_ss
+                // minimap2 command
+                << "minimap2 -t 1 -N 0 -n 1 -m " << kmer_prg->k << " -a "
+                << outnodes_ml_paths_fd_and_filepath.second << " " << read_locus_filepath << " 2>/dev/null | "
+                // sam file processing command
+                << "grep -v \"^@\" | awk '$2==0 || $2==16' | awk '{print $3}' | sort | uniq -c | "
+                << "sort -nrk1,1 | head -n1 | awk '{print $2}'";
             std::cout << "Running " << minimap2_ss.str() << std::endl;
-            system(minimap2_ss.str().c_str());
+            std::string ML_neighbour_str = exec(minimap2_ss.str().c_str());
+            close(outnodes_ml_paths_fd_and_filepath.first);
 
-            // 3. Get the ML sequence with most reads
-            std::stringstream ML_neighbour_command_ss;
-            const std::string ML_neighbour_filepath = (sample_outdir
-                / (pangenome_node.get_name() + "_node_" + int_to_string(j) + ".ML_neighbour"))
-                    .string();
-            ML_neighbour_command_ss << "grep -v \"^@\" " << sam_file
-                << " | awk '$2==0 || $2==16' | awk '{print $3}' | sort | uniq -c | "
-                << "sort -nrk1,1 | head -n1 | awk '{print $2}' > " << ML_neighbour_filepath;
-            std::cout << "Running " << ML_neighbour_command_ss.str() << std::endl;
-            system(ML_neighbour_command_ss.str().c_str());
-            std::ifstream ML_neighbour_fh;
-            open_file_for_reading(ML_neighbour_filepath, ML_neighbour_fh);
+            // 3. Get the neighbour that has most reads mapping to it
+            std::stringstream ML_neighbour_ss;
+            ML_neighbour_ss << ML_neighbour_str;
             int ML_neighbour=-1;
-            ML_neighbour_fh >> ML_neighbour;
-            ML_neighbour_fh.close();
+            ML_neighbour_ss >> ML_neighbour;
             if (ML_neighbour == -1) {
-                // select the most covered neighbour
-                int max_coverage = -1;
+                // here, no neighbour was selected by read mapping
+                // select terminus if it is available
+                bool terminus_is_one_of_the_neighbours = false;
                 for (uint32_t i = 0; i != current_node->out_nodes.size(); ++i) {
-                    const KmerNodePtr& considered_outnode
+                    const KmerNodePtr& considered_outnode = current_node->out_nodes[i].lock();
+                    if (considered_outnode->id == terminus_node_id) {
+                        terminus_is_one_of_the_neighbours = true;
+                        break;
+                    }
+                }
+
+                if (terminus_is_one_of_the_neighbours) {
+                    ML_neighbour = terminus_node_id;
+                }else {
+                    // select the most covered neighbour
+                    int max_coverage = -1;
+                    for (uint32_t i = 0; i != current_node->out_nodes.size(); ++i) {
+                        const KmerNodePtr& considered_outnode
                         = current_node->out_nodes[i].lock();
-                    const int coverage =
-                        this->get_covg(considered_outnode->id, pandora::Strand::Forward, sample_id) +
-                        this->get_covg(considered_outnode->id, pandora::Strand::Reverse, sample_id);
-                    if (coverage > max_coverage) {
-                        max_coverage = coverage;
-                        ML_neighbour = considered_outnode->id;
+                        const int coverage =
+                            this->get_covg(considered_outnode->id, pandora::Strand::Forward, sample_id) +
+                            this->get_covg(considered_outnode->id, pandora::Strand::Reverse, sample_id);
+                        if (coverage > max_coverage) {
+                            max_coverage = coverage;
+                            ML_neighbour = considered_outnode->id;
+                        }
                     }
                 }
             }
             ML_outnode = this->kmer_prg->nodes[ML_neighbour];
-
-            //clean up
-            fs::remove(outnodes_ml_paths_filename);
-            fs::remove(sam_file);
-            fs::remove(ML_neighbour_filepath);
         }
         if (ML_outnode)
             prev_node_along_maxpath[current_node->id] = ML_outnode->id;

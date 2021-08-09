@@ -151,7 +151,8 @@ public:
     float find_max_path_with_base_level_mapping(std::vector<KmerNodePtr>& maxpath,
         const std::string& prob_model, const uint32_t& max_num_kmers_to_average,
         const uint32_t& sample_id, const pangenome::Node &pangenome_node,
-        const fs::path &sample_outdir);
+        const fs::path &sample_outdir,
+        const std::string &read_locus_filepath);
 
     float find_max_path(std::vector<KmerNodePtr>& maxpath,
                                                const std::string& prob_model,
