@@ -8,6 +8,7 @@
 
 #include "kmergraphwithcoverage.h"
 #include "localPRG.h"
+#include <boost/algorithm/string.hpp>
 
 using namespace prg;
 
@@ -313,24 +314,43 @@ float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<K
             }
             std::pair<int, std::string> outnodes_ml_paths_fd_and_filepath = build_memfd(outnodes_ml_paths_ss.str());
 
-            // 2. Map the loci reads to the ML sequences, and get the neighbour that has most reads mapping to it
+            // 2. Map the loci reads to the ML sequences
             std::stringstream minimap2_ss;
             minimap2_ss
                 // minimap2 command
                 << "minimap2 -t 1 -N 0 -n 1 -m " << kmer_prg->k << " -a "
-                << outnodes_ml_paths_fd_and_filepath.second << " " << read_locus_filepath << " 2>/dev/null | "
-                // sam file processing command
-                << "grep -v \"^@\" | awk '$2==0 || $2==16' | awk '{print $3}' | sort | uniq -c | "
-                << "sort -nrk1,1 | head -n1 | awk '{print $2}'";
-            std::cout << "Running " << minimap2_ss.str() << std::endl;
-            std::string ML_neighbour_str = exec(minimap2_ss.str().c_str());
+                << outnodes_ml_paths_fd_and_filepath.second << " " << read_locus_filepath << " 2>/dev/null";
+            std::string minimap_out = exec(minimap2_ss.str().c_str());
             close(outnodes_ml_paths_fd_and_filepath.first);
 
             // 3. Get the neighbour that has most reads mapping to it
-            std::stringstream ML_neighbour_ss;
-            ML_neighbour_ss << ML_neighbour_str;
+            std::map<std::string, uint32_t> ML_neighbour_str_to_count;
+            std::vector<std::string> lines;
+            boost::split(lines, minimap_out, boost::is_any_of("\n"));
+            for (const std::string &line : lines) {
+                const bool is_header = line[0]=='@';
+                if (!is_header) {
+                    std::vector<std::string> words;
+                    boost::split(words, line, boost::is_any_of("\t"));
+                    if (words.size() >= 10) {
+                        const bool is_mapped = words[1]=="0" || words[1]=="16";
+                        if (is_mapped) {
+                            const std::string &ML_neighbour_str = words[2];
+                            ML_neighbour_str_to_count[ML_neighbour_str]++;
+                        }
+                    }
+
+                }
+            }
+
             int ML_neighbour=-1;
-            ML_neighbour_ss >> ML_neighbour;
+            uint32_t max_count=0;
+            for (const auto &ML_neighbour_str_and_count : ML_neighbour_str_to_count) {
+                if (ML_neighbour_str_and_count.second > max_count) {
+                    ML_neighbour = std::stoi(ML_neighbour_str_and_count.first);
+                    max_count = ML_neighbour_str_and_count.second;
+                }
+            }
             if (ML_neighbour == -1) {
                 // here, no neighbour was selected by read mapping
                 // select terminus if it is available
