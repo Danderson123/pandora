@@ -812,7 +812,6 @@ std::vector<LocalNodePtr> LocalPRG::localnode_path_from_kmernode_path(
     const std::vector<KmerNodePtr>& kmernode_path, const uint32_t w,
     bool extend_to_begin, bool extend_to_end) const
 {
-    BOOST_LOG_TRIVIAL(debug) << "Convert kmernode path to localnode path";
     std::vector<LocalNodePtr> localnode_path, kmernode, walk_path;
     if (kmernode_path.empty())
         return localnode_path;
@@ -1683,30 +1682,32 @@ void LocalPRG::add_consensus_path_to_fastaq(Fastaq& output_fq, PanNodePtr pnode,
 
     std::vector<uint32_t> covgs
         = get_covgs_along_localnode_path(pnode, lmp, kmp, sample_id);
-    auto mode_covg = Maths::mode(covgs.begin(), covgs.end());
-    auto mean_covg = Maths::mean(covgs.begin(), covgs.end());
-    BOOST_LOG_TRIVIAL(debug) << "Found global coverage " << global_covg
-                             << " and path mode " << mode_covg << " and mean "
-                             << mean_covg;
-    if (global_covg > 20 and 20 * mean_covg < global_covg) {
-        BOOST_LOG_TRIVIAL(debug)
-            << "Skip LocalPRG " << name << " mean along max likelihood path too low";
-        kmp.clear();
-        return;
-    }
-    if (global_covg > 20 and mean_covg > 10 * global_covg) {
-        BOOST_LOG_TRIVIAL(debug) << "Skip LocalPRG " << name
-                                 << " as mean along max likelihood path too high";
-        kmp.clear();
-        return;
-    }
-    if (global_covg > 20 and mode_covg < 3 and mean_covg < 3) {
-        BOOST_LOG_TRIVIAL(debug)
-            << "Skip LocalPRG " << name
-            << " as mode and mean along max likelihood path too low";
-        kmp.clear();
-        return;
-    }
+
+    // for now, we don't filter out loci
+//    auto mode_covg = Maths::mode(covgs.begin(), covgs.end());
+//    auto mean_covg = Maths::mean(covgs.begin(), covgs.end());
+//    BOOST_LOG_TRIVIAL(debug) << "Found global coverage " << global_covg
+//                             << " and path mode " << mode_covg << " and mean "
+//                             << mean_covg;
+//    if (global_covg > 20 and 20 * mean_covg < global_covg) {
+//        BOOST_LOG_TRIVIAL(debug)
+//            << "Skip LocalPRG " << name << " mean along max likelihood path too low";
+//        kmp.clear();
+//        return;
+//    }
+//    if (global_covg > 20 and mean_covg > 10 * global_covg) {
+//        BOOST_LOG_TRIVIAL(debug) << "Skip LocalPRG " << name
+//                                 << " as mean along max likelihood path too high";
+//        kmp.clear();
+//        return;
+//    }
+//    if (global_covg > 20 and mode_covg < 3 and mean_covg < 3) {
+//        BOOST_LOG_TRIVIAL(debug)
+//            << "Skip LocalPRG " << name
+//            << " as mode and mean along max likelihood path too low";
+//        kmp.clear();
+//        return;
+//    }
 
     std::string fq_name = pnode->get_name();
     std::string header = " log P(data|sequence)=" + std::to_string(ppath);

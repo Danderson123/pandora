@@ -333,16 +333,23 @@ int pandora_compare(CompareOptions& opt)
         std::map<std::string, std::string> locus_to_reads = get_locus_to_reads(
             sample_outdir, sample_name);
 
+        std::vector<pangenome::NodePtr> nodes_to_be_removed_from_pangraph_sample;
+        nodes_to_be_removed_from_pangraph_sample.reserve(pangraph_nodes.size());
+        std::vector<pangenome::NodePtr> nodes_to_be_added_to_pangraph;
+        nodes_to_be_added_to_pangraph.reserve(pangraph_nodes.size());
+        std::vector<vector<KmerNodePtr>> kmps_to_be_added_to_pangraph;
+        kmps_to_be_added_to_pangraph.reserve(pangraph_nodes.size());
+
 #pragma omp parallel for num_threads(opt.threads) schedule(dynamic, 1)
         for (uint32_t pangraph_node_index = 0; pangraph_node_index < pangraph_nodes.size(); ++pangraph_node_index) {
-            auto pangraph_node = pangraph_nodes[pangraph_node_index];
+            pangenome::NodePtr pangraph_node = pangraph_nodes[pangraph_node_index];
             const std::string& locus = pangraph_node->name;
 
             const bool no_reads_mapped = locus_to_reads[locus].empty();
             if (no_reads_mapped) {
-#pragma omp critical(pangraph_sample)
+#pragma omp critical(nodes_to_be_removed_from_pangraph_sample)
                 {
-                    pangraph_sample->remove_node(pangraph_node);
+                    nodes_to_be_removed_from_pangraph_sample.push_back(pangraph_node);
                 }
                 continue;
             }
@@ -359,23 +366,33 @@ int pandora_compare(CompareOptions& opt)
             close(read_locus_fd_and_filepath.first);
 
             if (kmp.empty()) {
-#pragma omp critical(pangraph_sample)
+#pragma omp critical(nodes_to_be_removed_from_pangraph_sample)
                 {
-                    pangraph_sample->remove_node(pangraph_node);
+                    nodes_to_be_removed_from_pangraph_sample.push_back(pangraph_node);
                 }
                 continue;
             }
 
 #pragma omp critical(pangraph)
             {
-                pangraph->add_node(prgs[pangraph_node->prg_id]);
-                pangraph->add_hits_between_PRG_and_sample(
-                    pangraph_node->prg_id, sample_name, kmp);
+                nodes_to_be_added_to_pangraph.push_back(pangraph_node);
+                kmps_to_be_added_to_pangraph.push_back(kmp);
             }
         }
 
-        pangraph->copy_coverages_to_kmergraphs(*pangraph_sample, sample_id);
+        // post parallel
+        for (const auto &node : nodes_to_be_removed_from_pangraph_sample) {
+            pangraph_sample->remove_node(node);
+        }
+        for (uint32_t i=0; i<nodes_to_be_added_to_pangraph.size(); ++i) {
+            const auto &pangraph_node = nodes_to_be_added_to_pangraph[i];
+            const auto &kmp = kmps_to_be_added_to_pangraph[i];
+            pangraph->add_node(prgs[pangraph_node->prg_id]);
+            pangraph->add_hits_between_PRG_and_sample(
+                pangraph_node->prg_id, sample_name, kmp);
+        }
 
+        pangraph->copy_coverages_to_kmergraphs(*pangraph_sample, sample_id);
         consensus_fq.save(sample_outdir / "pandora.consensus.fq.gz");
         consensus_fq.clear();
         if (pangraph_sample->nodes.empty() and sample_pangraph_size > 0) {
@@ -391,6 +408,9 @@ int pandora_compare(CompareOptions& opt)
         // in compare pangraph has just coverage information and the consensus path for
         // each sample and PRG
     }
+
+
+
 
     // for each pannode in graph, find a best reference
     // and output a vcf and aligned fasta of sample paths through it
