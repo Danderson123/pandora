@@ -123,6 +123,7 @@ include_directories(SYSTEM
         ${CMAKE_BINARY_DIR}/include
         ${PROJECT_SOURCE_DIR}/thirdparty/cgranges/cpp
         ${SEQAN_INCLUDE_DIRS}
+        ${PROJECT_SOURCE_DIR}/thirdparty/minimap2/
         )
 
 # normal includes: warnings will be reported for these
@@ -145,9 +146,12 @@ file(GLOB_RECURSE SRC_FILES
         ${PROJECT_SOURCE_DIR}/include/*/*.hpp
         ${PROJECT_SOURCE_DIR}/include/*/*.h
         ${PROJECT_SOURCE_DIR}/thirdparty/src/*.cpp
+        ${PROJECT_SOURCE_DIR}/thirdparty/minimap2/*.c
         ${PROJECT_SOURCE_DIR}/thirdparty/include/*.hpp
         ${PROJECT_SOURCE_DIR}/thirdparty/include/*.h
         )
+list(REMOVE_ITEM SRC_FILES ${PROJECT_SOURCE_DIR}/thirdparty/minimap2/main.c ${PROJECT_SOURCE_DIR}/thirdparty/minimap2/example.c)
+message(STATUS SRC_FILES)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 add_dependencies(${PROJECT_NAME} gatb)

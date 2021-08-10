@@ -485,7 +485,7 @@ void LocalPRG::minimizer_sketch(const std::shared_ptr<Index>& index, const uint3
     std::string kmer;
     uint64_t smallest;
     std::pair<uint64_t, uint64_t> kh;
-    KmerHash hash; // TODO: replace by GATB's MPHF?
+    pandora::KmerHash hash; // TODO: replace by GATB's MPHF?
     uint32_t num_kmers_added = 0;
     KmerNodePtr kn, new_kn;
     std::vector<LocalNodePtr> n;

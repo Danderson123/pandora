@@ -9,6 +9,8 @@
 #include "kmergraphwithcoverage.h"
 #include "localPRG.h"
 #include <boost/algorithm/string.hpp>
+#include "minimap.h"
+#include "kseq.h"
 
 using namespace prg;
 
@@ -314,35 +316,61 @@ float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<K
             }
             std::pair<int, std::string> outnodes_ml_paths_fd_and_filepath = build_memfd(outnodes_ml_paths_ss.str());
 
-            // 2. Map the loci reads to the ML sequences
-            std::stringstream minimap2_ss;
-            minimap2_ss
-                // minimap2 command
-                << "minimap2 -t 1 -N 0 -n 1 -m " << kmer_prg->k << " -a "
-                << outnodes_ml_paths_fd_and_filepath.second << " " << read_locus_filepath << " 2>/dev/null";
-            std::string minimap_out = exec(minimap2_ss.str().c_str());
-            close(outnodes_ml_paths_fd_and_filepath.first);
-
-            // 3. Get the neighbour that has most reads mapping to it
+            // 2. Map the loci reads to the ML sequences using minimap2 and get the neighbour that has most reads mapping to it
+            // setup the counter
             std::map<std::string, uint32_t> ML_neighbour_str_to_count;
-            std::vector<std::string> lines;
-            boost::split(lines, minimap_out, boost::is_any_of("\n"));
-            for (const std::string &line : lines) {
-                const bool is_header = line[0]=='@';
-                if (!is_header) {
-                    std::vector<std::string> words;
-                    boost::split(words, line, boost::is_any_of("\t"));
-                    if (words.size() >= 10) {
-                        const bool is_mapped = words[1]=="0" || words[1]=="16";
-                        if (is_mapped) {
-                            const std::string &ML_neighbour_str = words[2];
-                            ML_neighbour_str_to_count[ML_neighbour_str]++;
-                        }
-                    }
+            {
+                // setup minimap2 options
+                mm_idxopt_t iopt;
+                mm_mapopt_t mopt;
+                int n_threads = 1;
+                mm_verbose = 2; // disable message output to stderr
+                mm_set_opt(0, &iopt, &mopt);
+                iopt.k = kmer_prg->k;
+                mopt.flag |= MM_F_CIGAR; // perform alignment
 
+                // build target index
+                mm_idx_reader_t *r = mm_idx_reader_open(outnodes_ml_paths_fd_and_filepath.second.c_str(), &iopt, 0);
+
+                // open query seq file
+                gzFile query_seq_fd = gzopen(read_locus_filepath.c_str(), "r");
+                kseq_t *ks = kseq_init(query_seq_fd);
+
+                // minimap2 the reads
+                mm_idx_t *mi;
+                while ((mi = mm_idx_reader_read(r, n_threads)) != 0) { // traverse each part of the index
+                    mm_mapopt_update(&mopt, mi); // this sets the maximum minimizer occurrence; TODO: set a better default in mm_mapopt_init()!
+                    mm_tbuf_t *tbuf = mm_tbuf_init(); // thread buffer; for multi-threading, allocate one tbuf for each thread
+                    gzrewind(query_seq_fd);
+                    kseq_rewind(ks);
+                    while (kseq_read(ks) >= 0) { // each kseq_read() call reads one query sequence
+                        mm_reg1_t *reg;
+                        int j, i, n_reg;
+                        reg = mm_map(mi, ks->seq.l, ks->seq.s, &n_reg, tbuf, &mopt, 0); // get all hits for the query
+                        for (j = 0; j < n_reg; ++j) { // traverse hits and print them out
+                            mm_reg1_t *r = &reg[j];
+                            assert(r->p); // with MM_F_CIGAR, this should not be NULL
+                            const bool is_secondary = r->id != r->parent;
+                            if (is_secondary) {
+                                continue;
+                            }
+                            const char* ML_neighbour_char_pointer = mi->seq[r->rid].name;
+                            const std::string ML_neighbour_str(ML_neighbour_char_pointer);
+                            ML_neighbour_str_to_count[ML_neighbour_str]++;
+
+                            free(r->p);
+                        }
+                        free(reg);
+                    }
+                    mm_tbuf_destroy(tbuf);
+                    mm_idx_destroy(mi);
                 }
+                mm_idx_reader_close(r); // close the index reader
+                kseq_destroy(ks); // close the query file
+                gzclose(query_seq_fd);
             }
 
+            // Get the neighbour that has most reads mapping to it
             int ML_neighbour=-1;
             uint32_t max_count=0;
             for (const auto &ML_neighbour_str_and_count : ML_neighbour_str_to_count) {
