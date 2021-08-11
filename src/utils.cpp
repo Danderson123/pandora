@@ -794,10 +794,14 @@ std::pair<int, std::string> build_memfd(const std::string &data) {
     if (ftruncate(fd, data.length()) == -1)
         fatal_error("Could not truncate memfd");
 
-    write(fd, data.c_str(), data.size());
+    if (write(fd, data.c_str(), data.size()) != (long)(data.size()))
+        fatal_error("Could not write all the data to memfd");
 
     if (fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE) == -1)
         fatal_error("Could not add write seal to memfd");
+
+    if (fsync(fd) == -1)
+        fatal_error("Could not fsync memfd.");
 
     std::stringstream ss_filepath;
     ss_filepath << "/proc/" << getpid() << "/fd/" << fd;

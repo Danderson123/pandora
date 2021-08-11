@@ -331,9 +331,15 @@ float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<K
 
                 // build target index
                 mm_idx_reader_t *r = mm_idx_reader_open(outnodes_ml_paths_fd_and_filepath.second.c_str(), &iopt, 0);
+                if (!r)
+                    fatal_error("Could not open mm_idx_reader_t for ", outnodes_ml_paths_fd_and_filepath.second);
 
                 // open query seq file
                 gzFile query_seq_fd = gzopen(read_locus_filepath.c_str(), "r");
+                if (!query_seq_fd)
+                    fatal_error("Could not open minimap2 query sequence file for ",
+                        read_locus_filepath);
+
                 kseq_t *ks = kseq_init(query_seq_fd);
 
                 // minimap2 the reads
@@ -357,7 +363,6 @@ float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<K
                             const char* ML_neighbour_char_pointer = mi->seq[r->rid].name;
                             const std::string ML_neighbour_str(ML_neighbour_char_pointer);
                             ML_neighbour_str_to_count[ML_neighbour_str]++;
-
                             free(r->p);
                         }
                         free(reg);
