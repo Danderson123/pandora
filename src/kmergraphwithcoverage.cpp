@@ -358,6 +358,7 @@ float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<K
                             assert(r->p); // with MM_F_CIGAR, this should not be NULL
                             const bool is_secondary = r->id != r->parent;
                             if (is_secondary) {
+                                free(r->p);
                                 continue;
                             }
                             const char* ML_neighbour_char_pointer = mi->seq[r->rid].name;
