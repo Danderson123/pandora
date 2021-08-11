@@ -373,6 +373,7 @@ float KmerGraphWithCoverage::find_max_path_with_base_level_mapping(std::vector<K
                 mm_idx_reader_close(r); // close the index reader
                 kseq_destroy(ks); // close the query file
                 gzclose(query_seq_fd);
+                close(outnodes_ml_paths_fd_and_filepath.first);
             }
 
             // Get the neighbour that has most reads mapping to it
