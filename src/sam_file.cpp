@@ -101,9 +101,10 @@ void SAMFile::write_sam_record_from_hit_cluster(
             (right_flank_start + flank_size) <= seq.seq.size() ? flank_size :
             seq.seq.size() - right_flank_start;
         const std::string right_flank = seq.seq.substr(right_flank_start, right_flank_length);
+        const std::string hit_strand = (first_hit->get_prg_kmer_strand()) ? "256" : "272";
 
         file_handler << seq.name << "[" << first_mapped_pos << ":" << last_mapped_pos << "]\t"
-                     << "0\t"
+                     << hit_strand << "\t"
                      << prgs[first_hit->get_prg_id()]->name << "\t"
                      << first_hit->get_prg_path() << "\t"
                      << "254\t"
